@@ -9,6 +9,22 @@
 #include "task.h"
 #endif /* ifdef WIN32 */
 
+// PX4
+#if defined(__PX4_NUTTX) || defined(__PX4_POSIX) || defined(UCLIENT_PLATFORM_NUTTX) || defined(UCLIENT_PLATFORM_POSIX)
+
+#ifdef	__cplusplus
+# define __BEGIN_DECLS	extern "C" {
+# define __END_DECLS	}
+#else
+# define __BEGIN_DECLS
+# define __END_DECLS
+#endif
+
+#define __EXPORT __attribute__ ((visibility ("default")))
+#include <drivers/drv_hrt.h>
+
+#endif // PX4
+
 //==================================================================
 //                             PUBLIC
 //==================================================================
@@ -55,6 +71,9 @@ int64_t uxr_nanos(
     struct timespec ts;
     z_impl_clock_gettime(CLOCK_REALTIME, &ts);
     return (((int64_t)ts.tv_sec) * 1000000000) + ts.tv_nsec;
+#elif defined(__PX4_NUTTX) || defined(__PX4_POSIX) || defined(UCLIENT_PLATFORM_NUTTX) || defined(UCLIENT_PLATFORM_POSIX)
+
+    return (int64_t)(hrt_absolute_time() * 1000);
 #else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
