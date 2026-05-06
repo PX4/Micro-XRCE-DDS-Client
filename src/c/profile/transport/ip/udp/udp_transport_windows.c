@@ -11,6 +11,11 @@ bool uxr_init_udp_platform(
 {
     bool rv = false;
 
+    /* Initialise the platform fd to a sentinel so failure paths are
+     * unambiguous and a later uxr_close_udp_platform() will not try to
+     * closesocket() on an uninitialised handle. */
+    platform->poll_fd.fd = INVALID_SOCKET;
+
     WSADATA wsa_data;
     if (0 != WSAStartup(MAKEWORD(2, 2), &wsa_data))
     {
@@ -59,14 +64,38 @@ bool uxr_init_udp_platform(
             freeaddrinfo(result);
         }
     }
+
+    /* Clean up on failure here so we don't rely on the caller invoking
+     * uxr_close_udp_platform() — the upstream client calls
+     * uxr_init_udp_transport() then immediately discards the transport on
+     * failure, leaking the socket and the WSAStartup() reference. */
+    if (!rv)
+    {
+        if (INVALID_SOCKET != platform->poll_fd.fd)
+        {
+            closesocket(platform->poll_fd.fd);
+            platform->poll_fd.fd = INVALID_SOCKET;
+        }
+        WSACleanup();
+    }
     return rv;
 }
 
 bool uxr_close_udp_platform(
         uxrUDPPlatform* platform)
 {
-    bool rv = (INVALID_SOCKET == platform->poll_fd.fd) ? true : (0 == closesocket(platform->poll_fd.fd));
-    return (0 == WSACleanup()) && rv;
+    bool rv = true;
+    if (INVALID_SOCKET != platform->poll_fd.fd)
+    {
+        rv = (0 == closesocket(platform->poll_fd.fd));
+        platform->poll_fd.fd = INVALID_SOCKET;
+        /* Only decrement the Winsock reference count if we own one — i.e.
+         * the matching uxr_init_udp_platform() succeeded. Without this
+         * guard a close-after-failed-init would underflow Winsock's
+         * process-wide reference count. */
+        rv = (0 == WSACleanup()) && rv;
+    }
+    return rv;
 }
 
 size_t uxr_write_udp_data_platform(
